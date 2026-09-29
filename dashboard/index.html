@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChainSeal</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+<script src="config.js"></script>
+<style>
+:root{--bg:#e6ece9;--panel:#f8faf9;--ink:#12232a;--mute:#5b6d72;--line:#c3cfcb;--teal:#0f5c5c;--ok:#1b7f4b;--bad:#b3261e;--warn:#a86a00}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Instrument Sans",system-ui,sans-serif}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.82rem}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:20px 32px;border-bottom:2px solid var(--ink)}
+h1{margin:0;font-size:1.6rem;letter-spacing:-.02em}
+h1 small{display:block;font-size:.9rem;font-weight:400;color:var(--mute);letter-spacing:0}
+.tools{display:flex;gap:16px;align-items:center}
+select{font:inherit;padding:6px 10px;border:1.5px solid var(--ink);background:var(--panel);border-radius:4px}
+#dot{width:10px;height:10px;border-radius:50%;background:var(--bad);display:inline-block;margin-right:6px}
+main{display:grid;grid-template-columns:minmax(280px,1fr) minmax(320px,1.4fr);gap:24px;padding:24px 32px;max-width:1200px;margin:auto}
+section{background:var(--panel);border:1.5px solid var(--ink);border-radius:6px;padding:20px}
+section.wide{grid-column:1/-1}
+h2{margin:0 0 12px;font-size:1.15rem}
+.drop{display:block;border:2px dashed var(--teal);border-radius:6px;padding:26px 14px;text-align:center;color:var(--teal);cursor:pointer;font-weight:600}
+.drop.over,.drop:hover,.drop:focus-within{background:#dcebe8}
+.drop input{position:absolute;opacity:0;width:1px;height:1px}
+.fp{margin:10px 0;color:var(--mute);min-height:1.4em;word-break:break-all}
+input[type=text]{width:100%;font:inherit;padding:8px 10px;border:1.5px solid var(--line);border-radius:4px;margin-bottom:10px;background:#fff}
+button{font:inherit;font-weight:600;padding:9px 18px;background:var(--teal);color:#fff;border:0;border-radius:4px;cursor:pointer}
+button:hover{background:#0b4646}button.ghost{background:transparent;color:var(--bad);border:1.5px solid var(--bad);padding:4px 10px}
+#result{display:flex;align-items:center;gap:22px;min-height:190px;margin-top:8px}
+.stamp{flex:none;width:130px;height:130px;border-radius:50%;border:5px double currentColor;display:grid;place-items:center;text-align:center;font-weight:700;font-size:1.05rem;line-height:1.15;transform:rotate(-12deg);animation:press .45s cubic-bezier(.2,1.4,.4,1)}
+@keyframes press{from{transform:rotate(-12deg) scale(2.2);opacity:0}}
+@media(prefers-reduced-motion:reduce){.stamp{animation:none}}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+#result dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:2px 14px;color:var(--ink)}
+#result dt{color:var(--mute)}#result dd{margin:0;word-break:break-all}
+.idle{color:var(--mute)}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mute);font-weight:600}
+.badge{font-weight:700}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 18px;border-radius:4px;color:#fff;display:none;max-width:90vw}
+@media(max-width:760px){main{grid-template-columns:1fr;padding:16px}header{padding:16px}#result{flex-direction:column;align-items:flex-start}}
+</style>
+</head>
+<body>
+<header>
+  <h1>ChainSeal<small>Check that the software you install is the software that was published.</small></h1>
+  <div class="tools">
+    <label>Act as
+      <select id="who">
+        <option value="0">Publisher (account 0)</option>
+        <option value="1">Attacker (account 1)</option>
+      </select>
+    </label>
+    <span class="mono"><i id="dot"></i><span id="net">connecting</span></span>
+  </div>
+</header>
+
+<main>
+  <section>
+    <h2>Publish a release</h2>
+    <label class="drop" id="dz1">Drop a file or click to choose<input type="file" id="f1"></label>
+    <div class="fp mono" id="h1">No file selected</div>
+    <input type="text" id="name" placeholder="Package name, e.g. MyApp">
+    <input type="text" id="ver" placeholder="Version, e.g. 1.0.0">
+    <button id="reg">Register release</button>
+  </section>
+
+  <section>
+    <h2>Verify a download</h2>
+    <label class="drop" id="dz2">Drop the file you downloaded<input type="file" id="f2"></label>
+    <div class="fp mono" id="h2">No file selected</div>
+    <div id="result"><span class="idle">The verdict appears here.</span></div>
+  </section>
+
+  <section class="wide">
+    <h2>Release history</h2>
+    <table>
+      <thead><tr><th>Package</th><th>Version</th><th>Fingerprint</th><th>Publisher</th><th>Published</th><th>Status</th><th></th></tr></thead>
+      <tbody id="rows"><tr><td colspan="7" class="idle">No releases yet. Publish one to start the history.</td></tr></tbody>
+    </table>
+  </section>
+</main>
+<div id="toast" role="status"></div>
+
+<script>
+const provider = new ethers.JsonRpcProvider("http://127.0.0.1:8545");
+const reg = new ethers.Contract(CONFIG.address, CONFIG.abi, provider);
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const short = h => h.slice(0, 10) + "…" + h.slice(-6);
+const who = a => a.slice(0, 6) + "…" + a.slice(-4);
+const fmt = t => new Date(Number(t) * 1000).toLocaleString();
+let pubHash = null, verHash = null;
+
+async function sha256(file) {
+  const buf = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return ethers.hexlify(new Uint8Array(buf));
+}
+function toast(msg, cls) {
+  const t = $("toast"); t.textContent = msg; t.style.background = cls === "ok" ? "var(--ok)" : "var(--bad)";
+  t.style.display = "block"; clearTimeout(t._t); t._t = setTimeout(() => t.style.display = "none", 4500);
+}
+function wire(zone, input, out, onHash) {
+  const handle = async f => { if (!f) return; const h = await sha256(f); out.textContent = f.name + "  " + short(h); onHash(h); };
+  input.onchange = () => handle(input.files[0]);
+  zone.ondragover = e => { e.preventDefault(); zone.classList.add("over"); };
+  zone.ondragleave = () => zone.classList.remove("over");
+  zone.ondrop = e => { e.preventDefault(); zone.classList.remove("over"); handle(e.dataTransfer.files[0]); };
+}
+wire($("dz1"), $("f1"), $("h1"), h => pubHash = h);
+wire($("dz2"), $("f2"), $("h2"), h => { verHash = h; verify(h); });
+
+async function send(fn, okMsg) {
+  try {
+    const signer = await provider.getSigner(Number($("who").value));
+    const tx = await fn(reg.connect(signer));
+    await tx.wait();
+    toast(okMsg, "ok");
+    await refresh(); if (verHash) verify(verHash);
+  } catch (e) { toast("Blocked: " + (e.reason || e.shortMessage || e.message), "bad"); }
+}
+$("reg").onclick = () => {
+  if (!pubHash) return toast("Choose a file first.", "bad");
+  send(c => c.register($("name").value.trim(), $("ver").value.trim(), pubHash), "Release registered on-chain.");
+};
+$("rows").onclick = e => {
+  const h = e.target.dataset.revoke; if (!h) return;
+  const reason = prompt("Reason for revoking this release?", "Signing key compromised");
+  if (reason) send(c => c.revoke(h, reason), "Release revoked.");
+};
+
+async function verify(h) {
+  const [st, pub, name, ver, ts, reason] = await reg.verify(h);
+  const s = Number(st);
+  const map = [["bad", "TAMPERED<br>or unknown"], ["ok", "VERIFIED"], ["warn", "REVOKED"]][s];
+  let dl = `<dt>Fingerprint</dt><dd class="mono">${short(h)}</dd>`;
+  if (s === 0) dl = `<dt>Result</dt><dd>This file was never published. It may have been modified or come from an untrusted source.</dd>` + dl;
+  else dl = `<dt>Package</dt><dd>${esc(name)} ${esc(ver)}</dd><dt>Publisher</dt><dd class="mono">${who(pub)}</dd><dt>Published</dt><dd>${fmt(ts)}</dd>` + (s === 2 ? `<dt>Revoked</dt><dd>${esc(reason)}</dd>` : "");
+  $("result").innerHTML = `<div class="stamp ${map[0]}">${map[1]}</div><dl>${dl}</dl>`;
+}
+
+async function refresh() {
+  const evs = (await reg.queryFilter(reg.filters.Registered(), 0)).reverse();
+  if (!evs.length) return;
+  const rows = [];
+  for (const e of evs) {
+    const h = e.args.fileHash, [st, pub, name, ver, ts] = await reg.verify(h), s = Number(st);
+    const badge = s === 1 ? '<span class="badge ok">Active</span>' : '<span class="badge warn">Revoked</span>';
+    const btn = s === 1 ? `<button class="ghost" data-revoke="${h}">Revoke</button>` : "";
+    rows.push(`<tr><td>${esc(name)}</td><td>${esc(ver)}</td><td class="mono">${short(h)}</td><td class="mono">${who(pub)}</td><td>${fmt(ts)}</td><td>${badge}</td><td>${btn}</td></tr>`);
+  }
+  $("rows").innerHTML = rows.join("");
+}
+
+(async () => {
+  try { const n = await provider.getBlockNumber(); $("dot").style.background = "var(--ok)"; $("net").textContent = "local chain, block " + n; await refresh(); }
+  catch { $("net").textContent = "node offline: run npm run node"; }
+})();
+</script>
+</body>
+</html>

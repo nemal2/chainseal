@@ -1,0 +1,15 @@
+{
+  "name": "chainseal",
+  "version": "1.0.0",
+  "description": "ChainSeal - blockchain software supply chain attestation registry",
+  "scripts": {
+    "node": "hardhat node",
+    "test": "hardhat test",
+    "deploy": "hardhat run scripts/deploy.js --network localhost",
+    "dash": "python3 -m http.server 8000 --directory dashboard"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.0"
+  }
+}
